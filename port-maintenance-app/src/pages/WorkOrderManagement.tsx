@@ -60,17 +60,19 @@ export const WorkOrderManagement = () => {
   };
 
   const handleViewDetail = (order: WorkOrder) => {
-    setSelectedOrder(order);
-    setSelectedParts([...order.partsUsed]);
+    const latestOrder = workOrders.find(o => o.id === order.id) || order;
+    setSelectedOrder(latestOrder);
+    setSelectedParts([...latestOrder.partsUsed]);
     detailForm.setFieldsValue({
-      repairContent: order.repairContent,
-      qualityScore: order.qualityScore ? order.qualityScore / 20 : undefined,
-      qualityComment: order.qualityComment,
+      repairContent: latestOrder.repairContent,
+      qualityScore: latestOrder.qualityScore ? latestOrder.qualityScore / 20 : undefined,
+      qualityComment: latestOrder.qualityComment,
     });
     setIsDetailModalOpen(true);
   };
 
   const handleAddPart = () => {
+    if (!selectedOrder) return;
     partForm.validateFields().then(values => {
       const part = parts.find(p => p.id === values.partId);
       if (!part) return;
@@ -82,8 +84,11 @@ export const WorkOrderManagement = () => {
         partCode: part.code,
         quantity: values.quantity,
         unit: part.unit,
+        purpose: values.purpose,
       };
-      setSelectedParts(prev => [...prev, newPart]);
+      const updatedParts = [...selectedParts, newPart];
+      setSelectedParts(updatedParts);
+      updateWorkOrder(selectedOrder.id, { partsUsed: updatedParts });
       partForm.resetFields();
       setIsPartModalOpen(false);
       message.success('备件添加成功');
@@ -91,10 +96,15 @@ export const WorkOrderManagement = () => {
   };
 
   const handleRemovePart = (partId: string) => {
-    setSelectedParts(prev => prev.filter(p => p.id !== partId));
+    if (!selectedOrder) return;
+    const updatedParts = selectedParts.filter(p => p.id !== partId);
+    setSelectedParts(updatedParts);
+    updateWorkOrder(selectedOrder.id, { partsUsed: updatedParts });
+    message.success('备件已移除');
   };
 
   const handleSyncPartApplication = (appId: string) => {
+    if (!selectedOrder) return;
     const app = partApplications.find(a => a.id === appId);
     if (!app) return;
 
@@ -105,10 +115,13 @@ export const WorkOrderManagement = () => {
       partCode: item.partCode,
       quantity: item.quantity,
       unit: item.unit,
+      purpose: item.purpose,
     }));
 
-    setSelectedParts(prev => [...prev, ...newParts]);
-    message.success('已同步备件领用明细');
+    const updatedParts = [...selectedParts, ...newParts];
+    setSelectedParts(updatedParts);
+    updateWorkOrder(selectedOrder.id, { partsUsed: updatedParts });
+    message.success('已同步备件领用明细（含用途）');
   };
 
   const handleSubmit = () => {
@@ -492,9 +505,16 @@ export const WorkOrderManagement = () => {
                           <Button key="delete" type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => handleRemovePart(part.id)} />
                         ] : []}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                          <span>{part.partName} ({part.partCode})</span>
-                          <span style={{ fontWeight: 500 }}>{part.quantity} {part.unit}</span>
+                        <div style={{ width: '100%' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <span style={{ fontWeight: 500 }}>{part.partName} ({part.partCode})</span>
+                            <span style={{ color: '#1890ff', fontWeight: 500 }}>{part.quantity} {part.unit}</span>
+                          </div>
+                          {part.purpose && (
+                            <div style={{ fontSize: 12, color: '#666' }}>
+                              用途：{part.purpose}
+                            </div>
+                          )}
                         </div>
                       </List.Item>
                     )}
@@ -607,6 +627,13 @@ export const WorkOrderManagement = () => {
             rules={[{ required: true, message: '请输入数量' }]}
           >
             <InputNumber min={1} style={{ width: '100%' }} placeholder="请输入数量" />
+          </Form.Item>
+          <Form.Item
+            name="purpose"
+            label="用途"
+            rules={[{ required: true, message: '请输入用途' }]}
+          >
+            <Input placeholder="请输入备件使用用途" />
           </Form.Item>
         </Form>
       </Modal>

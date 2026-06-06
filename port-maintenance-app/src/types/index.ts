@@ -94,6 +94,7 @@ export interface PartUsage {
   partCode: string;
   quantity: number;
   unit: string;
+  purpose?: string;
 }
 
 export interface PartApplication {

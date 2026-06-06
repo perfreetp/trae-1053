@@ -8,10 +8,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:electron": "set NODE_ENV=development&& concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "dev:electron": "cross-env NODE_ENV=development concurrently \"npm:dev\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "tsc -b && vite build",
     "build:electron": "npm run build && electron-builder",
-    "build:electron:win": "npm run build && electron-builder --win",
+    "build:electron:win": "npm run build && electron-builder --win --x64",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -23,15 +23,29 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "package.json"
     ],
     "win": {
-      "target": "nsis",
-      "icon": "src/assets/icon.png"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
     }
   },
   "dependencies": {
@@ -49,6 +63,8 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^10.0.3",
+    "cross-env": "^10.1.0",
     "electron": "^42.3.3",
     "electron-builder": "^26.8.1",
     "eslint": "^10.3.0",
@@ -57,6 +73,7 @@
     "globals": "^17.6.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "wait-on": "^9.0.10"
   }
 }

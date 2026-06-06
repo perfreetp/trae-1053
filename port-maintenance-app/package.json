@@ -1,13 +1,38 @@
 {
   "name": "port-maintenance-app",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "港口装卸设备维保管理系统",
+  "author": "Port Maintenance Team",
+  "main": "electron/main.js",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:electron": "set NODE_ENV=development&& concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "tsc -b && vite build",
+    "build:electron": "npm run build && electron-builder",
+    "build:electron:win": "npm run build && electron-builder --win",
     "lint": "eslint .",
     "preview": "vite preview"
+  },
+  "build": {
+    "appId": "com.port.maintenance.app",
+    "productName": "港口装卸设备维保管理系统",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "src/assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "dependencies": {
     "@ant-design/icons": "^6.2.5",
@@ -24,6 +49,8 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "electron": "^42.3.3",
+    "electron-builder": "^26.8.1",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",

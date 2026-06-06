@@ -69,6 +69,14 @@ export const useStore = () => {
     setArchives(prev => [...prev, archive]);
   }, []);
 
+  const addDowntimeRecord = useCallback((record: DowntimeRecord) => {
+    setDowntimeRecords(prev => [...prev, record]);
+  }, []);
+
+  const updatePart = useCallback((id: string, part: Partial<Part>) => {
+    setParts(prev => prev.map(item => item.id === id ? { ...item, ...part } : item));
+  }, []);
+
   return {
     equipments,
     inspectionTasks,
@@ -90,6 +98,8 @@ export const useStore = () => {
     addPartApplication,
     updatePartApplication,
     addArchive,
+    addDowntimeRecord,
+    updatePart,
   };
 };
 

@@ -87,6 +87,14 @@ export const FaultReportPage = () => {
       const equipment = equipments.find(e => e.id === values.equipmentId);
       if (!equipment) return;
 
+      const photos: string[] = fileList
+        .filter(file => file.status === 'done' || file.originFileObj)
+        .map(file => {
+          if (file.url) return file.url;
+          if (file.thumbUrl) return file.thumbUrl;
+          return URL.createObjectURL(file.originFileObj as Blob);
+        });
+
       const newReport: FaultReport = {
         id: `ft${Date.now()}`,
         equipmentId: equipment.id,
@@ -97,7 +105,7 @@ export const FaultReportPage = () => {
         title: values.title,
         description: values.description,
         severity: values.severity,
-        photos: [],
+        photos,
         status: '待处理',
       };
       addFaultReport(newReport);

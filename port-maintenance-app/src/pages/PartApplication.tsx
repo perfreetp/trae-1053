@@ -32,7 +32,7 @@ const statusConfig: Record<PartStatus, { color: string; text: string }> = {
 };
 
 export const PartApplicationPage = () => {
-  const { partApplications, parts, workOrders, addPartApplication, updatePartApplication } = useAppStore();
+  const { partApplications, parts, workOrders, addPartApplication, updatePartApplication, updatePart } = useAppStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedApplication, setSelectedApplication] = useState<PartApplication | null>(null);
@@ -102,6 +102,19 @@ export const PartApplicationPage = () => {
   };
 
   const handleApprove = (app: PartApplication) => {
+    const insufficientParts: string[] = [];
+    app.items.forEach(item => {
+      const part = parts.find(p => p.code === item.partCode);
+      if (part && part.stock < item.quantity) {
+        insufficientParts.push(`${part.name}(库存:${part.stock}, 申请:${item.quantity})`);
+      }
+    });
+
+    if (insufficientParts.length > 0) {
+      message.error(`库存不足，无法批准：${insufficientParts.join('; ')}`);
+      return;
+    }
+
     updatePartApplication(app.id, {
       status: '已批准',
       approver: '王主管',
@@ -112,12 +125,32 @@ export const PartApplicationPage = () => {
   };
 
   const handleReceive = (app: PartApplication) => {
+    const insufficientParts: string[] = [];
+    app.items.forEach(item => {
+      const part = parts.find(p => p.code === item.partCode);
+      if (part && part.stock < item.quantity) {
+        insufficientParts.push(`${part.name}(库存:${part.stock}, 申请:${item.quantity})`);
+      }
+    });
+
+    if (insufficientParts.length > 0) {
+      message.error(`库存不足，无法领用：${insufficientParts.join('; ')}`);
+      return;
+    }
+
+    app.items.forEach(item => {
+      const part = parts.find(p => p.code === item.partCode);
+      if (part) {
+        updatePart(part.id, { stock: part.stock - item.quantity });
+      }
+    });
+
     updatePartApplication(app.id, {
       status: '已领用',
       receiver: app.applicant,
       receiveTime: new Date().toLocaleString(),
     });
-    message.success('已确认领用');
+    message.success('已确认领用，库存已更新');
     setIsDetailModalOpen(false);
   };
 

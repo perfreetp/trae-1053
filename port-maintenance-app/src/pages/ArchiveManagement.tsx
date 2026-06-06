@@ -23,7 +23,7 @@ import dayjs from 'dayjs';
 const { Option } = Select;
 
 export const ArchiveManagement = () => {
-  const { archives, equipments, workOrders, addArchive } = useAppStore();
+  const { archives, equipments, workOrders, faultReports, downtimeRecords } = useAppStore();
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedArchive, setSelectedArchive] = useState<MaintenanceArchive | null>(null);
   const [searchText, setSearchText] = useState('');
@@ -50,9 +50,222 @@ export const ArchiveManagement = () => {
 
   const handleExportReport = () => {
     message.info('正在生成设备健康报告...');
-    setTimeout(() => {
-      message.success('报告已生成并导出');
-    }, 1000);
+
+    const totalDowntime = downtimeRecords.reduce((sum, r) => sum + r.durationHours, 0);
+    const avgScore = archives.length > 0
+      ? (archives.reduce((sum, a) => sum + a.qualityScore, 0) / archives.length).toFixed(1)
+      : '0';
+
+    const equipmentHealth = equipments.map(eq => {
+      const eqArchives = archives.filter(a => a.equipmentId === eq.id);
+      const eqFaults = faultReports.filter(f => f.equipmentId === eq.id);
+      const eqDowntime = downtimeRecords.filter(d => d.equipmentId === eq.id);
+      const totalDowntime = eqDowntime.reduce((sum, d) => sum + d.durationHours, 0);
+      const avgScore = eqArchives.length > 0
+        ? eqArchives.reduce((sum, a) => sum + a.qualityScore, 0) / eqArchives.length
+        : 100;
+      return { ...eq, avgScore, faultCount: eqFaults.length, totalDowntime, archiveCount: eqArchives.length };
+    });
+
+    const generateReportHTML = () => {
+      return `
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>港口装卸设备健康报告</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Microsoft YaHei', Arial, sans-serif; padding: 40px; background: #f5f5f5; }
+    .report-container { max-width: 1000px; margin: 0 auto; background: white; padding: 40px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .report-header { text-align: center; border-bottom: 3px solid #1890ff; padding-bottom: 20px; margin-bottom: 30px; }
+    .report-header h1 { color: #1890ff; font-size: 28px; margin-bottom: 10px; }
+    .report-header .date { color: #666; font-size: 14px; }
+    .section { margin-bottom: 30px; }
+    .section h2 { color: #333; font-size: 20px; border-left: 4px solid #1890ff; padding-left: 12px; margin-bottom: 15px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+    .stat-card { background: #f0f7ff; padding: 20px; border-radius: 8px; text-align: center; }
+    .stat-card .value { font-size: 28px; font-weight: bold; color: #1890ff; }
+    .stat-card .label { color: #666; font-size: 14px; margin-top: 5px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #e8e8e8; padding: 12px; text-align: left; }
+    th { background: #fafafa; font-weight: 600; color: #333; }
+    tr:nth-child(even) { background: #fafafa; }
+    .score-high { color: #52c41a; font-weight: bold; }
+    .score-medium { color: #faad14; font-weight: bold; }
+    .score-low { color: #f5222d; font-weight: bold; }
+    .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #e8e8e8; color: #999; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="report-container">
+    <div class="report-header">
+      <h1>港口装卸设备健康报告</h1>
+      <div class="date">报告生成时间：${new Date().toLocaleString()}</div>
+    </div>
+
+    <div class="section">
+      <h2>一、整体概览</h2>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="value">${equipments.length}</div>
+          <div class="label">设备总数</div>
+        </div>
+        <div class="stat-card">
+          <div class="value">${archives.length}</div>
+          <div class="label">维修记录</div>
+        </div>
+        <div class="stat-card">
+          <div class="value">${totalDowntime.toFixed(1)}h</div>
+          <div class="label">总停机时长</div>
+        </div>
+        <div class="stat-card">
+          <div class="value">${avgScore}</div>
+          <div class="label">平均质量分</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>二、设备台账</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>设备名称</th>
+            <th>设备编号</th>
+            <th>设备类型</th>
+            <th>所在位置</th>
+            <th>运行状态</th>
+            <th>保养等级</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${equipments.map(eq => `
+            <tr>
+              <td>${eq.name}</td>
+              <td>${eq.code}</td>
+              <td>${eq.type}</td>
+              <td>${eq.location}</td>
+              <td>${eq.status}</td>
+              <td>${eq.maintenanceLevel}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>三、设备健康评分</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>设备名称</th>
+            <th>故障次数</th>
+            <th>停机时长(h)</th>
+            <th>维修次数</th>
+            <th>平均质量分</th>
+            <th>健康状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${equipmentHealth.map(eq => {
+            const scoreClass = eq.avgScore >= 80 ? 'score-high' : eq.avgScore >= 60 ? 'score-medium' : 'score-low';
+            const healthStatus = eq.avgScore >= 80 ? '良好' : eq.avgScore >= 60 ? '一般' : '较差';
+            return `
+              <tr>
+                <td>${eq.name}</td>
+                <td>${eq.faultCount}</td>
+                <td>${eq.totalDowntime.toFixed(1)}</td>
+                <td>${eq.archiveCount}</td>
+                <td class="${scoreClass}">${eq.avgScore.toFixed(0)}</td>
+                <td>${healthStatus}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>四、历史故障记录</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>故障编号</th>
+            <th>设备</th>
+            <th>故障标题</th>
+            <th>严重程度</th>
+            <th>报修人</th>
+            <th>报修时间</th>
+            <th>状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${faultReports.map(f => `
+            <tr>
+              <td>${f.id}</td>
+              <td>${f.equipmentName}</td>
+              <td>${f.title}</td>
+              <td>${f.severity}</td>
+              <td>${f.reporter}</td>
+              <td>${f.reportTime}</td>
+              <td>${f.status}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>五、停机统计</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>设备</th>
+            <th>故障原因</th>
+            <th>开始时间</th>
+            <th>结束时间</th>
+            <th>停机时长(h)</th>
+            <th>关联工单</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${downtimeRecords.map(d => `
+            <tr>
+              <td>${d.equipmentName}</td>
+              <td>${d.reason}</td>
+              <td>${d.startTime}</td>
+              <td>${d.endTime || '进行中'}</td>
+              <td>${d.durationHours}</td>
+              <td>${d.workOrderId || '-'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="footer">
+      <p>本报告由港口装卸设备维保管理系统自动生成</p>
+      <p>如有疑问，请联系设备管理部门</p>
+    </div>
+  </div>
+</body>
+</html>
+      `;
+    };
+
+    const blob = new Blob([generateReportHTML()], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `设备健康报告_${dayjs().format('YYYYMMDD_HHmmss')}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    message.success('健康报告已导出，请查看下载文件');
   };
 
   const stats = useMemo(() => {

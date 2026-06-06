@@ -17,8 +17,10 @@ import {
   InputNumber,
   Rate,
   message,
+  Divider,
+  List,
 } from 'antd';
-import { PlusOutlined, UserOutlined, ClockCircleOutlined, CheckCircleOutlined, ToolOutlined, FileTextOutlined } from '@ant-design/icons';
+import { PlusOutlined, UserOutlined, ClockCircleOutlined, CheckCircleOutlined, ToolOutlined, FileTextOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { WorkOrder, WorkOrderStatus, PartUsage } from '../types';
 import { useAppStore } from '../context/StoreContext';
 import dayjs from 'dayjs';
@@ -39,13 +41,16 @@ const stepTitles = ['待指派', '处理中', '待验收', '已完成'];
 const technicians = ['张工', '李工', '王工', '赵工', '刘工'];
 
 export const WorkOrderManagement = () => {
-  const { workOrders, equipments, parts, updateWorkOrder, addWorkOrder, updateFaultReport } = useAppStore();
+  const { workOrders, equipments, parts, updateWorkOrder, addWorkOrder, updateFaultReport, addArchive, addDowntimeRecord, partApplications, updatePartApplication } = useAppStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<WorkOrder | null>(null);
   const [form] = Form.useForm();
   const [detailForm] = Form.useForm();
   const [filterStatus, setFilterStatus] = useState<string>('');
+  const [partForm] = Form.useForm();
+  const [isPartModalOpen, setIsPartModalOpen] = useState(false);
+  const [selectedParts, setSelectedParts] = useState<PartUsage[]>([]);
 
   const filteredOrders = workOrders.filter(order => !filterStatus || order.status === filterStatus);
 
@@ -56,12 +61,54 @@ export const WorkOrderManagement = () => {
 
   const handleViewDetail = (order: WorkOrder) => {
     setSelectedOrder(order);
+    setSelectedParts([...order.partsUsed]);
     detailForm.setFieldsValue({
       repairContent: order.repairContent,
       qualityScore: order.qualityScore ? order.qualityScore / 20 : undefined,
       qualityComment: order.qualityComment,
     });
     setIsDetailModalOpen(true);
+  };
+
+  const handleAddPart = () => {
+    partForm.validateFields().then(values => {
+      const part = parts.find(p => p.id === values.partId);
+      if (!part) return;
+
+      const newPart: PartUsage = {
+        id: `pu${Date.now()}`,
+        partId: part.id,
+        partName: part.name,
+        partCode: part.code,
+        quantity: values.quantity,
+        unit: part.unit,
+      };
+      setSelectedParts(prev => [...prev, newPart]);
+      partForm.resetFields();
+      setIsPartModalOpen(false);
+      message.success('备件添加成功');
+    });
+  };
+
+  const handleRemovePart = (partId: string) => {
+    setSelectedParts(prev => prev.filter(p => p.id !== partId));
+  };
+
+  const handleSyncPartApplication = (appId: string) => {
+    const app = partApplications.find(a => a.id === appId);
+    if (!app) return;
+
+    const newParts = app.items.map(item => ({
+      id: `pu${Date.now()}-${item.id}`,
+      partId: item.partCode,
+      partName: item.partName,
+      partCode: item.partCode,
+      quantity: item.quantity,
+      unit: item.unit,
+    }));
+
+    setSelectedParts(prev => [...prev, ...newParts]);
+    message.success('已同步备件领用明细');
   };
 
   const handleSubmit = () => {
@@ -108,10 +155,16 @@ export const WorkOrderManagement = () => {
   const handleCompleteWork = () => {
     if (!selectedOrder) return;
     detailForm.validateFields().then(values => {
+      const startTime = selectedOrder.startTime || selectedOrder.assignTime;
+      const endTime = new Date().toLocaleString();
+      const downtimeHours = dayjs(endTime).diff(dayjs(startTime), 'hour', true);
+
       updateWorkOrder(selectedOrder.id, {
         status: '待验收',
-        endTime: new Date().toLocaleString(),
+        endTime,
         repairContent: values.repairContent,
+        partsUsed: selectedParts,
+        downtimeHours: Number(downtimeHours.toFixed(1)),
       });
       message.success('维修完成，等待验收');
       setIsDetailModalOpen(false);
@@ -122,18 +175,56 @@ export const WorkOrderManagement = () => {
     if (!selectedOrder) return;
     detailForm.validateFields().then(values => {
       const score = Math.round((values.qualityScore || 0) * 20);
+      const now = new Date().toLocaleString();
+      const startTime = selectedOrder.startTime || selectedOrder.assignTime;
+      const endTime = selectedOrder.endTime || now;
+      const downtimeHours = dayjs(endTime).diff(dayjs(startTime), 'hour', true);
+
       updateWorkOrder(selectedOrder.id, {
         status: '已完成',
         qualityScore: score,
         qualityComment: values.qualityComment,
-        acceptTime: new Date().toLocaleString(),
+        acceptTime: now,
+        partsUsed: selectedParts,
+        downtimeHours: Number(downtimeHours.toFixed(1)),
       });
 
       if (selectedOrder.faultReportId) {
         updateFaultReport(selectedOrder.faultReportId, { status: '已处理' });
       }
 
-      message.success('验收通过');
+      const archive = {
+        id: `ar${Date.now()}`,
+        equipmentId: selectedOrder.equipmentId,
+        equipmentName: selectedOrder.equipmentName,
+        equipmentCode: selectedOrder.equipmentCode,
+        workOrderId: selectedOrder.id,
+        type: '维修' as const,
+        date: now,
+        content: selectedOrder.repairContent || values.repairContent || '',
+        parts: selectedParts,
+        qualityScore: score,
+        qualityComment: values.qualityComment || '',
+        operator: selectedOrder.assignee || '系统',
+        archiveTime: now,
+      };
+      addArchive(archive);
+
+      const downtimeRecord = {
+        id: `dt${Date.now()}`,
+        equipmentId: selectedOrder.equipmentId,
+        equipmentName: selectedOrder.equipmentName,
+        equipmentCode: selectedOrder.equipmentCode,
+        startTime,
+        endTime,
+        durationHours: Number(downtimeHours.toFixed(1)),
+        reason: selectedOrder.title,
+        faultType: '机械故障',
+        workOrderId: selectedOrder.id,
+      };
+      addDowntimeRecord(downtimeRecord);
+
+      message.success('验收通过，已自动生成归档记录和停机统计');
       setIsDetailModalOpen(false);
     });
   };
@@ -343,7 +434,7 @@ export const WorkOrderManagement = () => {
             <Col span={12}>
             <Card size="small" title="基本信息" style={{ marginBottom: 16 }}>
                 <p><ToolOutlined /> <strong>工单编号：</strong>{selectedOrder.id}</p>
-                <p><FileTextOutlined /> <strong>设备：</strong>{selectedOrder.equipmentName} ({selectedOrder.equipmentCode}</p>
+                <p><FileTextOutlined /> <strong>设备：</strong>{selectedOrder.equipmentName} ({selectedOrder.equipmentCode})</p>
                 <p><UserOutlined /> <strong>负责人：</strong>{selectedOrder.assignee || '未指派'}</p>
                 <p><ClockCircleOutlined /> <strong>创建时间：</strong>{selectedOrder.assignTime}</p>
                 {selectedOrder.startTime && <p><ClockCircleOutlined /> <strong>开始时间：</strong>{selectedOrder.startTime}</p>}
@@ -368,16 +459,48 @@ export const WorkOrderManagement = () => {
                 />
               </Card>
 
-              {selectedOrder.partsUsed.length > 0 && (
-                <Card size="small" title="更换备件">
-                  {selectedOrder.partsUsed.map((part: PartUsage) => (
-                    <div key={part.id} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>{part.partName} ({part.partCode})</span>
-                      <span>{part.quantity}{part.unit}</span>
-                    </div>
-                  ))}
-                </Card>
-              )}
+              <Card size="small" title="更换备件" extra={
+                selectedOrder.status === '处理中' && (
+                  <Space>
+                    {partApplications.filter(a => a.workOrderId === selectedOrder.id && a.status === '已领用').length > 0 && (
+                      <Select
+                        size="small"
+                        placeholder="同步领用单"
+                        style={{ width: 120 }}
+                        onSelect={handleSyncPartApplication}
+                      >
+                        {partApplications.filter(a => a.workOrderId === selectedOrder.id && a.status === '已领用').map(app => (
+                          <Option key={app.id} value={app.id}>{app.id}</Option>
+                        ))}
+                      </Select>
+                    )}
+                    <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setIsPartModalOpen(true)}>
+                      登记
+                    </Button>
+                  </Space>
+                )
+              }>
+                {selectedParts.length === 0 ? (
+                  <p style={{ color: '#999', textAlign: 'center' }}>暂无更换备件记录</p>
+                ) : (
+                  <List
+                    size="small"
+                    dataSource={selectedParts}
+                    renderItem={(part: PartUsage) => (
+                      <List.Item
+                        actions={selectedOrder.status === '处理中' ? [
+                          <Button key="delete" type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => handleRemovePart(part.id)} />
+                        ] : []}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                          <span>{part.partName} ({part.partCode})</span>
+                          <span style={{ fontWeight: 500 }}>{part.quantity} {part.unit}</span>
+                        </div>
+                      </List.Item>
+                    )}
+                  />
+                )}
+              </Card>
             </Col>
           </Row>
 
@@ -454,6 +577,38 @@ export const WorkOrderManagement = () => {
             )}
           </div>
         )}
+      </Modal>
+
+      <Modal
+        title="登记更换备件"
+        open={isPartModalOpen}
+        onOk={handleAddPart}
+        onCancel={() => setIsPartModalOpen(false)}
+        width={500}
+        destroyOnClose
+      >
+        <Form form={partForm} layout="vertical">
+          <Form.Item
+            name="partId"
+            label="选择备件"
+            rules={[{ required: true, message: '请选择备件' }]}
+          >
+            <Select placeholder="请选择备件">
+              {parts.map(part => (
+                <Option key={part.id} value={part.id}>
+                  {part.name} ({part.code}) - 库存: {part.stock}{part.unit}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item
+            name="quantity"
+            label="数量"
+            rules={[{ required: true, message: '请输入数量' }]}
+          >
+            <InputNumber min={1} style={{ width: '100%' }} placeholder="请输入数量" />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );
